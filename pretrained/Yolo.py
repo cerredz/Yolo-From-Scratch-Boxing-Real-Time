@@ -8,12 +8,16 @@ class Yolo(LightningModule):
     def __init__(self, S:int=7, B:int=2, C:int=20):
         super().__init__()
 
+        # define regression problem variables
         self.S = S
         self.B = B
         self.C = C
 
+        # leaky relu activation function
         self.leaky_relu = nn.LeakyReLU(0.1)
 
+
+        # define layers in full Yolo
         self.layer1 = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=64, kernel_size=(7,7), stride=2, padding=3),
             self.leaky_relu,
@@ -70,6 +74,7 @@ class Yolo(LightningModule):
             nn.Linear(in_features=4096, out_features=S * S * (C + B * 5)),
         )
 
+
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
@@ -77,7 +82,5 @@ class Yolo(LightningModule):
         x = self.layer4(x)
         x = self.layer5(x)
         x = self.layer6(x)
-        
-        # FIXED: Correct reshape syntax, preserving the batch dimension
         x = x.view(-1, self.S, self.S, self.C + self.B * 5)
         return x
