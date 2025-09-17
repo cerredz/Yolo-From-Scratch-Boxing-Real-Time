@@ -10,7 +10,7 @@
 - 
 
 
-using paper needs to impment:
+using paper needs to implment:
 
 - layers of model
 - optimization function

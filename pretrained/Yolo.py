@@ -1,6 +1,7 @@
 import torch # Added for the reshape/view function
 from torch import nn
 from lightning.pytorch import LightningModule
+from .Loss import loss
 
 class Yolo(LightningModule):
 
@@ -74,7 +75,6 @@ class Yolo(LightningModule):
             nn.Linear(in_features=4096, out_features=S * S * (C + B * 5)),
         )
 
-
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
@@ -84,3 +84,11 @@ class Yolo(LightningModule):
         x = self.layer6(x)
         x = x.view(-1, self.S, self.S, self.C + self.B * 5)
         return x
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        pred = self.forward(x)
+        loss = loss(pred, y, lambda_coord=5)
+
+    def configure_optimizers(self):
+        return torch.optim.AdamW(self.parameters, lr=1e-3)
