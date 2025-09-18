@@ -1,30 +1,49 @@
 import torch
+import math
+from torchvision import ops
 
-def loss(predictions, targets, lambda_coord=5, S=7, B=2, C=20):
+def loss(predictions, targets, lambda_coord=5,lambda_noobj=.5, S=7, B=2, C=20):
+    batch_size = predictions.shape[0]
+    print(predictions.shape)
+    pred_boxes = predictions[...,C:].reshape(batch_size, S, S, B, 5)
+    target_boxes = targets[...,C:].reshape(batch_size, S, S, B, 5)
 
-    l1, l2, l3, l4, l5 = 0, 0, 0, 0, 0
+    # extract 5 regression variables
+    pred_confidence, target_confidence = pred_boxes[...,0], target_boxes[...,0]
+    pred_xy, target_xy = pred_boxes[...,1:3], target_boxes[...,1:3]
+    pred_wh, target_wh = pred_boxes[...,3:5], target_boxes[...,3:5]
 
-    # calculate the first loss term (x and y)
-    for pred in predictions:
-        s_idx_1, s_idx_2 = -1, -1
-        for i in range(0, S ** 2):
-            s_idx_2 += 1
-            if s_idx_2 == S:
-                s_idx_2 = 0
-                s_idx_1 += 1
-            for j in range(0, B):
-                x_idx = C + (j * 5):C + 1 + (j * 5)
-                y_idx = C + 1 + (j * 5):C + 2 + (j * 5)
+    # extract class probabilities
+    pred_classes, target_classes = predictions[...,:C], targets[..., :C]
 
-                loss_x_squared = pow((targets[:,s_idx_1,s_idx_2,x_idx] - predictions[:,s_idx_1,s_idx_2,x_idx], 2))
-                loss_y_squared = pow((targets[:,s_idx_1,s_idx_2,y_idx] - predictions[:,s_idx_1,s_idx_2,y_idx], 2))
-                l1 += (loss_x_squared + loss_y_squared)
+    iou_val = iou(pred_boxes, target_boxes)
 
-    l1 *= lambda_coord
+    obj_mask = target_confidence == iou_val
+    noobj_mask = ~obj_mask
+    cell_obj_mask = torch.any(obj_mask, dim=-1)
 
-    # calculate the second loss term (w and h)
-    for i in range(0, S ** 2):
+    # calculate term 1
+    xy_loss = lambda_coord * torch.sum(obj_mask[..., None] * (target_xy - pred_xy) ** 2)
 
+    # calculate term 2
+    wh_diff = torch.sqrt(target_wh) - torch.sqrt(torch.abs(pred_wh))
+    wh_loss = lambda_coord * torch.sum(obj_mask[..., None] * wh_diff ** 2)
 
+    # calculate term 3
+    conf_obj_loss = torch.sum(obj_mask * (target_confidence - pred_confidence) ** 2)
 
+    # calculate term 4
+    conf_noobj_loss = lambda_noobj * torch.sum(noobj_mask * (target_confidence - pred_confidence) ** 2)
 
+    # calculate term 5
+    class_loss = torch.sum(cell_obj_mask[..., None] * (target_classes - pred_classes) ** 2)
+
+    loss_val = (loss - iou_val) ** 2
+
+    return loss_val
+
+def iou(pred_boxes, target_boxes):
+    
+    iou_tensor = ops.box_iou(target_boxes, pred_boxes)
+    iou_value = torch.max(iou_tensor)
+    return iou_value
