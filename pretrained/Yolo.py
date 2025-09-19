@@ -17,7 +17,6 @@ class Yolo(LightningModule):
         # leaky relu activation function
         self.leaky_relu = nn.LeakyReLU(0.1)
 
-
         # define layers in full Yolo
         self.layer1 = nn.Sequential(
             nn.Conv2d(in_channels=3, out_channels=64, kernel_size=(7,7), stride=2, padding=3),
@@ -88,7 +87,9 @@ class Yolo(LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
         pred = self.forward(x)
-        loss = loss(pred, y, lambda_coord=5)
+        loss = loss(pred, y,S=self.S, B=self.B, C=self.C)
+        self.log("train loss", loss)
+        return loss
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters, lr=1e-3)

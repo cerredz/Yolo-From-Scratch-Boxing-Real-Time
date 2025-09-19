@@ -10,40 +10,66 @@ def loss(predictions, targets, lambda_coord=5,lambda_noobj=.5, S=7, B=2, C=20):
 
     # extract 5 regression variables
     pred_confidence, target_confidence = pred_boxes[...,0], target_boxes[...,0]
-    pred_xy, target_xy = pred_boxes[...,1:3], target_boxes[...,1:3]
-    pred_wh, target_wh = pred_boxes[...,3:5], target_boxes[...,3:5]
+    pred_xywh = pred_boxes[..., 1:5]
+    target_xywh = target_boxes[..., 1:5]
 
     # extract class probabilities
     pred_classes, target_classes = predictions[...,:C], targets[..., :C]
 
-    iou_val = iou(pred_boxes, target_boxes)
+    # format boxes for iou calculation
+    pred_boxes_iou = convert_box_iou_format(pred_xywh)
+    target_boxes_iou = convert_box_iou_format(target_xywh[..., 0, :])
 
-    obj_mask = target_confidence == iou_val
-    noobj_mask = ~obj_mask
-    cell_obj_mask = torch.any(obj_mask, dim=-1)
-
-    # calculate term 1
-    xy_loss = lambda_coord * torch.sum(obj_mask[..., None] * (target_xy - pred_xy) ** 2)
-
-    # calculate term 2
-    wh_diff = torch.sqrt(target_wh) - torch.sqrt(torch.abs(pred_wh))
-    wh_loss = lambda_coord * torch.sum(obj_mask[..., None] * wh_diff ** 2)
-
-    # calculate term 3
-    conf_obj_loss = torch.sum(obj_mask * (target_confidence - pred_confidence) ** 2)
-
-    # calculate term 4
-    conf_noobj_loss = lambda_noobj * torch.sum(noobj_mask * (target_confidence - pred_confidence) ** 2)
-
-    # calculate term 5
-    class_loss = torch.sum(cell_obj_mask[..., None] * (target_classes - pred_classes) ** 2)
-
-    loss_val = (loss - iou_val) ** 2
-
-    return loss_val
-
-def iou(pred_boxes, target_boxes):
+    ious = torch.zeros(batch_size, S, S, B, device=predictions.device)
+    for i in range(B):
+        ious[..., i] = ops.box_iou(
+            pred_boxes_iou[..., i, :].view(-1, 4),
+            target_boxes_iou.view(-1, 4)
+        ).diag().view(batch_size, S, S)
     
-    iou_tensor = ops.box_iou(target_boxes, pred_boxes)
-    iou_value = torch.max(iou_tensor)
-    return iou_value
+    iou_maxes, best_box_indices = torch.max(ious, dim=-1, keepdim=True)
+
+    exists_box = targets[..., C:C+1] > 0 
+
+    obj_mask = exists_box * (torch.zeros_like(ious).scatter_(-1, best_box_indices, 1))
+    noobj_mask = ~obj_mask * exists_box 
+    noobj_mask += ~(exists_box.bool().any(-1, keepdim=True)) 
+
+    pred_confidence, target_confidence = pred_boxes[..., 0], iou_maxes.squeeze(-1) # Target is the actual IoU
+    pred_xy, target_xy = pred_boxes[..., 1:3], target_boxes[..., 1:3]
+    pred_wh = torch.sign(pred_boxes[..., 3:5]) * torch.sqrt(torch.abs(pred_boxes[..., 3:5]) + 1e-6)
+    target_wh = torch.sqrt(pred_boxes[..., 3:5])
+
+    # Term 1: Localization Loss (xy)
+    xy_loss = lambda_coord * torch.sum(obj_mask[..., None] * torch.square(target_xy - pred_xy))
+
+    # Term 2: Localization Loss (wh)
+    wh_loss = lambda_coord * torch.sum(obj_mask[..., None] * torch.square(target_wh - pred_wh))
+
+    # Term 3: Confidence Loss (Object)
+    # The target is the actual IoU value for the best box.
+    conf_obj_loss = torch.sum(obj_mask * torch.square(target_confidence - pred_confidence))
+
+    # Term 4: Confidence Loss (No Object)
+    # Target confidence here is 0.
+    conf_noobj_loss = lambda_noobj * torch.sum(noobj_mask * torch.square(0 - pred_confidence))
+
+    # Term 5: Classification Loss
+    cell_obj_mask = exists_box.bool().any(-1, keepdim=True)
+    class_loss = torch.sum(cell_obj_mask * torch.square(target_classes - pred_classes))
+
+    # --- Step 5: Final Loss ---
+    # The total loss is the sum of the individual components.
+    total_loss = xy_loss + wh_loss + conf_obj_loss + conf_noobj_loss + class_loss
+    
+    return total_loss
+
+def convert_box_iou_format(boxes):
+    x, y = boxes[..., 0], boxes[..., 1]
+    w, h = boxes[..., 2], boxes[..., 3]
+    x1 = x - w / 2
+    y1 = y - h / 2
+    x2 = x + w / 2
+    y2 = y + h / 2
+    return torch.stack([x1, y1, x2, y2], dim=-1)
+    
