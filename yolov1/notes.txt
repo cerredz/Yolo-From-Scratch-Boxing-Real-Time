@@ -1,0 +1,19 @@
+- Paper: "You Only Look Once: Unified, Real-Time Object Detection" by Redmon et al. (2016)
+
+- image is divided into S x S grid
+- predict 1 set of class probabilities per grid cell
+- for each grid cell predicts B bounding boxes, confidence for boxes, and C class probabilities
+- 24 convolutional layers followed by 2 fully connected layers
+
+
+- goal: maximize average precision
+- 
+
+
+using paper needs to implment:
+
+- layers of model
+- optimization function
+- linear activation function
+- hyperparameters
+- 

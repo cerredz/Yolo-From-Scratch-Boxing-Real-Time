@@ -1,0 +1,43 @@
+Datasets:
+- individual Datasets
+- class per Dataset
+    - use __get_item__ dunder in each class
+- datasets will have different "classifiers"
+- main datasets.py file to load in all of the datasets into 1 central object / datasets
+
+Database:
+- will store results of runs
+- each run will have folder of results
+- each run will correspond to an sqlite database
+- define function for where to save results + sqlite database structure
+- "results to csv" functionality, transform all of the images and all of the results to a singular csv file for others to download
+
+Helpers
+- common helpers for annotations, converting xmin, xmax, ymin, ymax to x,y,w,have
+- more helpers if anything else comes up
+
+Augmentator
+- given the final dataset, perform certain augmentations
+- just function level augmentations
+
+Screen Watcher
+- "src" of the application, all core logic will live in this part of the project
+- "watches screen"
+- funtionality:
+    - continuously takes screenshot of screen, puts them in directory, and then adds directory to message broker
+    - another component continuously checks message broker, running most recent message (most recent image) through yolov8
+    - pass results to 1) database and 2) monitor / logging 
+- add configurations: screen capture size, fps, where to save files, etc
+
+- updated funcitonality:
+    - still keep producer / consumer approach
+    - however, do everything IN MEMORY (disk writes / io operations are slow)
+    - need to use: python's queue, numpy arrays, mss
+
+- set max queue size, if queue size limit reached then we can slow down the fps capture
+- if queue size not reached after n last iterations, we can speed up fps capture up to a certain limit
+- 
+
+General other stuff:
+    - cli -> different commands, naming match, opponents, 
+    - monitoring / logging, benchmarking (multiple different approaches I might want to try)
